@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0 - 2026-06-04
+
+- 新增一键启动脚本：`start_polling.bat`（前台窗口）和 `start_polling_hidden.vbs`（后台静默）
+- 新增 `src/manual_login.py`：手动登录后保存 Cookie（解决验证码识别不准问题）
+- 修复 `auto_login.py` 的项目路径错误
+- 更新 `claude.md` 匹配当前 MVP 代码状态
+- 更新 README 启动说明
+
 ## 0.1.0 - 2026-06-04
 
 - 新增合同审批轮询 MVP。

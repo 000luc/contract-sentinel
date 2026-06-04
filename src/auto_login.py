@@ -16,7 +16,7 @@ from PIL import Image, ImageEnhance
 from playwright.sync_api import sync_playwright
 import ddddocr
 
-BASE_DIR = r"D:\BaiduSyncdisk\claude\Contract Sentinel"
+BASE_DIR = r"D:\BaiduSyncdisk\claude\contract-sentinel"
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 COOKIE_PATH = os.path.join(BASE_DIR, "data", "oa_cookies.json")
 SCREENSHOT_DIR = os.path.join(BASE_DIR, "data", "logs")

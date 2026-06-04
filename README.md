@@ -76,22 +76,42 @@ Copy-Item config.example.json config.json
 }
 ```
 
-## 运行
+## 一键启动
 
-先准备 OA 登录 Cookie。现阶段可以沿用探索脚本：
+根目录提供了两个入口：
+
+- **`start_polling.bat`** — 双击运行，显示命令行窗口（关窗即停）
+- **`start_polling_hidden.vbs`** — 双击运行，完全后台静默，无任何窗口
+
+停止后台轮询：打开任务管理器结束 `python.exe` 进程。
+
+## 准备 Cookie（首次必须）
+
+OA 有图片验证码，首次运行前需要获取一次登录态。有两个方式：
+
+**方式一：手动登录（推荐）**
+
+```powershell
+py src/manual_login.py
+```
+会弹出浏览器，你手动登录 OA，登录完后按 Enter 自动保存 Cookie。
+
+**方式二：自动识别验证码（准确率一般）**
 
 ```powershell
 py src/auto_login.py
 ```
 
-运行一次轮询：
+## 手动运行
+
+一次轮询：
 
 ```powershell
 $env:PYTHONPATH="D:\BaiduSyncdisk\claude\contract-sentinel\src"
 py src/run_contract_polling.py --once
 ```
 
-持续轮询：
+持续轮询（前台运行）：
 
 ```powershell
 $env:PYTHONPATH="D:\BaiduSyncdisk\claude\contract-sentinel\src"
