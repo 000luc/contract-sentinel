@@ -47,6 +47,24 @@ class OAClient:
         body = page.inner_text("body")
         return any(indicator in body for indicator in LOGIN_INDICATORS)
 
+    def count_todo_rows(self, page: Page) -> int:
+        """统计待办表格总行数（含非合同流程），用于实时显示"""
+        return page.evaluate(
+            """() => {
+                let count = 0;
+                const datePattern = /\\d{4}-\\d{2}-\\d{2}/;
+                for (const row of document.querySelectorAll("tr")) {
+                    const cells = Array.from(row.querySelectorAll("td")).map(
+                        td => td.innerText.trim()
+                    );
+                    if (cells.length >= 3 && datePattern.test(cells[cells.length - 1])) {
+                        count++;
+                    }
+                }
+                return count;
+            }"""
+        )
+
     def extract_todo_list(self, page: Page) -> list[WorkflowItem]:
         rows = page.evaluate(
             """() => {

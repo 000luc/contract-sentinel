@@ -67,14 +67,12 @@ class ContractApprovalPoller:
             self._log("OA 登录已失效，请重新登录")
             raise RuntimeError("OA login failed")
 
+        total = self.client.count_todo_rows(page)
         items = self.client.extract_todo_list(page)
-        self._log(f"待办列表共 {len(items)} 条")
         new_items = filter_new_contract_workflows(items, self.state, self.client)
+        self._log(f"OA 待办共 {total} 条，其中合同审批 {len(new_items)} 条")
 
-        if new_items:
-            self._log(f"发现 {len(new_items)} 个新合同流程")
-        else:
-            self._log("无新合同流程")
+        if not new_items:
             return 0
 
         processed_count = 0

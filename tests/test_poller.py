@@ -49,6 +49,10 @@ class FakeClient:
         self.calls.append(("extract_todo_list", page))
         return self.todo_items
 
+    def count_todo_rows(self, page) -> int:
+        self.calls.append(("count_todo_rows", page))
+        return len(self.todo_items)
+
     def download_attachments(self, page, item, output_dir: Path):
         self.calls.append(("download_attachments", item.workflow_id, output_dir))
         return list(self.attachments)
