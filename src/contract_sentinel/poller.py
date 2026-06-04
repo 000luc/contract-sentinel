@@ -48,6 +48,8 @@ class ContractApprovalPoller:
                 settings.audit_backend,
                 model=settings.direct_llm_model,
                 claude_command=settings.claude_cli_command,
+                api_key=settings.deepseek_api_key,
+                api_base=settings.deepseek_api_base,
             )
         )
         self.interval_seconds = settings.poll_interval_seconds
