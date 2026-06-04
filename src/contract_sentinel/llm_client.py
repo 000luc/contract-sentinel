@@ -6,11 +6,18 @@ import urllib.error
 from typing import Any
 
 
-class LlmClient:
-    def __init__(self, api_key: str, api_base: str, model: str):
+class LLMClient:
+    def __init__(
+        self,
+        api_key: str,
+        api_base: str,
+        model: str,
+        temperature: float = 0.1,
+    ):
         self.api_key = api_key
         self.api_base = api_base.rstrip("/")
         self.model = model
+        self.temperature = temperature
 
     def _build_body(
         self,
@@ -23,7 +30,7 @@ class LlmClient:
         return {
             "model": self.model,
             "messages": msgs,
-            "temperature": 0.1,
+            "temperature": self.temperature,
             "stream": False,
         }
 
@@ -45,6 +52,15 @@ class LlmClient:
                 result = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             error_body = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"DeepSeek API HTTP {exc.code}: {error_body[:500]}") from exc
+            raise RuntimeError(f"API HTTP {exc.code}: {error_body[:500]}") from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"API network error: {exc.reason}") from exc
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"API returned malformed JSON: {exc}") from exc
 
-        return result["choices"][0]["message"]["content"]
+        try:
+            return result["choices"][0]["message"]["content"]
+        except (KeyError, IndexError) as exc:
+            raise RuntimeError(
+                f"API response missing expected fields: {exc}"
+            ) from exc
