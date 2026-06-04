@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0 - 2026-06-04
+
+- `direct_llm` 审核后端正式实现：通过 DeepSeek API 读取流程资料并生成审核结论
+- 新增 `src/contract_sentinel/llm_client.py`：轻量 LLM API 客户端（纯标准库 urllib）
+- 新增 `src/contract_sentinel/attachment_reader.py`：附件文本提取（TXT/PDF/DOCX/XLSX）
+- DeepSeek API Key 和 API Base 可配置
+- 测试覆盖从 36 个扩展到 51 个
+- 51 个测试全部通过
+
 ## 0.2.0 - 2026-06-04
 
 - 新增一键启动脚本：`start_polling.bat`（前台窗口）和 `start_polling_hidden.vbs`（后台静默）
