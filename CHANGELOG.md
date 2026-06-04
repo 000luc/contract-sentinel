@@ -1,4 +1,13 @@
-﻿# Changelog
+# Changelog
+
+## 0.3.1 - 2026-06-04
+
+- 修复 OA 合同流程抓取不到的问题：流程编号改为可选，找不到时自动用标题生成 fallback ID
+- 扩展流程编号正则匹配范围，适配 OA 实际编号格式
+- 新增实时运行状态日志：显示待办总数、合同流程数、处理进度和审核结果
+- 新增 `debug_todo.py` 调试脚本
+- 新增 `count_todo_rows()` 方法用于准确统计待办数量
+- 修复 start_polling.bat 文件编码问题（UTF-8 → GBK），避免运行时中文乱码
 
 ## 0.3.0 - 2026-06-04
 
@@ -7,7 +16,7 @@
 - 新增 `src/contract_sentinel/attachment_reader.py`：附件文本提取（TXT/PDF/DOCX/XLSX）
 - DeepSeek API Key 和 API Base 可配置
 - 测试覆盖从 36 个扩展到 51 个
-- 51 个测试全部通过`n- 修复 start_polling.bat 文件编码问题（UTF-8 → GBK），避免运行时中文乱码
+- 51 个测试全部通过
 
 ## 0.2.0 - 2026-06-04
 
@@ -27,4 +36,3 @@
 - 新增轮询 CLI：`src/run_contract_polling.py`。
 - 新增测试覆盖：路径安全、状态存储、流程落盘、OA 客户端、审核后端、轮询编排。
 - 新增安全忽略规则，避免提交配置、Cookie、Chrome Profile、运行日志和合同附件。
-

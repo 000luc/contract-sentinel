@@ -69,8 +69,9 @@ class OAClient:
         rows = page.evaluate(
             """() => {
                 const result = [];
-                const seen = new Set();
-                const workflowPattern = /[0-9]{2}-[A-Z]-[A-Z]{2}[0-9]{4}-[0-9]+/;
+                const seenIds = new Set();
+                const seenTitles = new Set();
+                const workflowPattern = /[A-Z]{1,4}\\d{5,8}|[0-9]{2}-[A-Z]-[A-Z]{2}[0-9]{4}-[0-9]+/;
                 const datePattern = /\\d{4}-\\d{2}-\\d{2}/;
 
                 for (const row of document.querySelectorAll("tr")) {
@@ -78,18 +79,21 @@ class OAClient:
                         .map(td => td.innerText.trim())
                         .filter(Boolean);
                     if (!texts.length) continue;
+                    const title = texts[0];
+                    if (title.length > 120 || seenTitles.has(title)) continue;
+                    seenTitles.add(title);
 
-                    const idMatch = texts.join(" ").match(workflowPattern);
-                    if (!idMatch) continue;
-
-                    const workflowId = idMatch[0];
-                    if (seen.has(workflowId)) continue;
-                    seen.add(workflowId);
+                    // 尝试提取流程编号，没有也不跳过
+                    const joined = texts.join(" ");
+                    const idMatch = joined.match(workflowPattern);
+                    const workflowId = idMatch ? idMatch[0] : title.replace(/[^0-9a-zA-Z\\u4e00-\\u9fff]/g, "_").substring(0, 60);
+                    if (seenIds.has(workflowId)) continue;
+                    seenIds.add(workflowId);
 
                     const link = row.querySelector("a");
                     result.push({
                         workflow_id: workflowId,
-                        title: texts[0] || workflowId,
+                        title: title,
                         creator: texts[1] || "",
                         created_at: texts.find(text => datePattern.test(text)) || "",
                         detail_url: link ? (link.getAttribute("data-link") || link.getAttribute("href") || "") : "",
