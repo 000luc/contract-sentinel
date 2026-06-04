@@ -1,0 +1,9 @@
+config.json
+data/oa_cookies.json
+data/chrome_temp_profile/
+data/logs/
+data/contracts/
+data/reports/
+__pycache__/
+.pytest_cache/
+*.pyc
