@@ -1,141 +1,198 @@
 # Contract Sentinel
 
-Contract Sentinel 是一个本地 OA 合同审批轮询工具。它定时读取 OA 待办，按流程编号识别新的合同审批流程，下载流程详情和附件到本地目录，并通过可切换的审核后端生成审核请求或审核结论。
+合同审批流程自动轮询工具。
 
-## 功能
+## 这个项目解决什么问题？
 
-- 按 OA 流程编号去重，避免重复处理同一流程。
-- 每个流程单独落盘到 `D:\BaiduSyncdisk\claude\contract-approval\`。
-- 保存流程原始 JSON、页面 HTML、页面截图和附件。
-- 默认使用 `skill_request` 后端生成 `contract-approval-auditing` 审核请求。
-- 预留 `direct_llm` 和 `claude_cli` 审核后端。
-- 只读取 OA 和下载附件，不自动提交、同意或驳回审批。
+财务/法务人员每天需要在 OA 系统中手动检查有没有新的合同审批流到自己的待办，然后逐条点开、下载合同附件、审核条款、写审核意见。
+
+Contract Sentinel 把这个过程自动化了：**定时自动检查 OA 待办 → 识别合同类流程 → 下载合同附件和页面截图 → 生成审核请求**。你只需要在审核请求的基础上做最终的判断和批注，不需要手工去翻 OA 和下载文件。
+
+## 工作流程
+
+```
+定时轮询（每5分钟）
+    │
+    ├─ 1. 检查 OA 登录是否有效
+    │     └─ 无效 → 停止本轮，提示重新登录
+    │
+    ├─ 2. 读取待办列表
+    │
+    ├─ 3. 筛选合同类流程（按关键词匹配标题）
+    │
+    ├─ 4. 去重（按流程编号，已处理的不再处理）
+    │
+    └─ 对每个新流程：
+          ├─ 创建流程目录
+          ├─ 保存流程元数据（workflow.json）
+          ├─ 进入详情页，保存页面 HTML 和截图
+          ├─ 下载所有附件（Word/PDF/Excel…）
+          └─ 调用审核后端生成审核请求
+```
+
+整个过程**只读不写**：只查看和下载，不点击同意、驳回、提交，不修改 OA 数据。
 
 ## 目录结构
 
-```text
-src/contract_sentinel/
-  audit_backends.py      审核后端接口和实现
-  audit_runner.py        审核后端调用封装
-  oa_client.py           OA 页面读取和附件下载
-  poller.py              轮询主流程
-  settings.py            配置读取
-  state_store.py         本地处理状态
-  workflow_writer.py     流程资料落盘
-src/run_contract_polling.py
-tests/
+```
+contract-sentinel/
+├── start_polling.bat               # 一键启动（前台窗口）
+├── start_polling_hidden.vbs        # 一键启动（后台静默）
+├── config.example.json             # 配置模板
+├── config.json                     # 实际配置（已 .gitignore，不提交）
+├── README.md
+├── CHANGELOG.md
+├── claude.md                       # Claude Code 项目指引
+│
+├── src/                            # 源码
+│   ├── run_contract_polling.py     # 命令行入口
+│   ├── manual_login.py             # 手动登录获取 Cookie
+│   ├── auto_login.py               # 自动识别验证码登录（准确率一般）
+│   │
+│   └── contract_sentinel/          # 核心模块
+│       ├── settings.py             # 读取 config.json 配置
+│       ├── workflow_models.py      # 流程/附件/资料的数据结构
+│       ├── path_utils.py           # Windows 安全文件名处理
+│       ├── state_store.py          # 已处理流程去重
+│       ├── oa_client.py            # OA 页面读取、附件下载（Playwright）
+│       ├── workflow_writer.py      # 流程目录创建、文件落盘
+│       ├── audit_backends.py       # 审核后端接口与实现
+│       ├── audit_runner.py         # 审核后端调用封装
+│       └── poller.py               # 轮询主流程
+│
+├── tests/                          # 单元测试
+│   ├── test_poller.py
+│   ├── test_oa_client.py
+│   ├── test_audit_backends.py
+│   ├── test_path_utils.py
+│   ├── test_state_store.py
+│   └── test_workflow_writer.py
+│
+└── data/                           # 运行时数据（已 gitignore）
+    ├── oa_cookies.json             # OA 登录 Cookie
+    ├── chrome_temp_profile/        # 浏览器临时配置
+    └── logs/                       # 登录截图等
 ```
 
-流程资料输出目录：
+每个被处理的流程输出到外部目录（可在 config.json 中配置）：
 
-```text
-D:\BaiduSyncdisk\claude\contract-approval\<流程编号>_<标题>\
-  raw\workflow.json
-  raw\workflow.html
-  raw\workflow.png
-  attachments\
-  audit\audit_request.md
-  audit\audit_status.json
-  log.jsonl
 ```
+D:\BaiduSyncdisk\claude\contract-approval\
+├── <流程编号>_<标题>/
+│   ├── raw/
+│   │   ├── workflow.json       # 流程元数据
+│   │   ├── workflow.html       # 详情页 HTML
+│   │   └── workflow.png        # 详情页截图
+│   ├── attachments/            # 下载的合同附件
+│   ├── audit/
+│   │   ├── audit_request.md    # 审核请求
+│   │   └── audit_status.json   # 审核状态
+│   └── log.jsonl               # 操作日志
+│
+└── .state/
+    └── processed_workflows.json  # 已处理流程记录
+```
+
+## 前置条件
+
+- Windows 10/11
+- Python 3.12+
+- Chrome 或 Edge 浏览器
 
 ## 安装
 
+### 1. 安装 Python 依赖
+
 ```powershell
 py -m pip install pytest playwright
-py -m playwright install chromium
 ```
 
-如果需要自动登录验证码识别，旧探索脚本还依赖 `Pillow` 和 `ddddocr`：
+（如果要用自动验证码登录还需要 `ddddocr`：`py -m pip install pillow ddddocr`）
 
-```powershell
-py -m pip install pillow ddddocr
-```
-
-## 配置
-
-复制示例配置：
+### 2. 配置
 
 ```powershell
 Copy-Item config.example.json config.json
 ```
 
-`config.json` 包含本机账号、Cookie 路径和运行偏好，已被 `.gitignore` 忽略，不要提交。
+修改 `config.json` 中的配置项（大部分已有默认值，可直接使用）：
 
-主要配置：
+| 配置项 | 说明 | 默认值 |
+|--------|------|--------|
+| `oa_url` | OA 系统地址 | `https://oa.grgt.cn/` |
+| `contract_keywords` | 匹配合同流程的关键词 | `["付款合同评审", "合同评审"]` |
+| `poll_interval_seconds` | 轮询间隔（秒） | `300`（5分钟） |
+| `audit_backend` | 审核后端类型 | `skill_request` |
+| `approval_output_root` | 流程资料输出根目录 | `D:\...\contract-approval` |
 
-```json
-{
-  "oa_url": "https://oa.grgt.cn/",
-  "approval_output_root": "D:\\BaiduSyncdisk\\claude\\contract-approval",
-  "poll_interval_seconds": 300,
-  "contract_keywords": ["付款合同评审", "合同评审", "付款合同", "合同"],
-  "audit_backend": "skill_request",
-  "direct_llm_model": "deepseek-chat",
-  "claude_cli_command": "claude"
-}
-```
+注意：`config.json` 包含敏感信息，已被 `.gitignore` 排除，不要提交到 Git。
 
-## 一键启动
+## 使用
 
-根目录提供了两个入口：
+### 第一步：获取 OA 登录态
 
-- **`start_polling.bat`** — 双击运行，显示命令行窗口（关窗即停）
-- **`start_polling_hidden.vbs`** — 双击运行，完全后台静默，无任何窗口
-
-停止后台轮询：打开任务管理器结束 `python.exe` 进程。
-
-## 准备 Cookie（首次必须）
-
-OA 有图片验证码，首次运行前需要获取一次登录态。有两个方式：
-
-**方式一：手动登录（推荐）**
+OA 登录页有图片验证码，首次运行前需要先保存一次登录 Cookie。推荐手动方式：
 
 ```powershell
-py src/manual_login.py
+py src\manual_login.py
 ```
-会弹出浏览器，你手动登录 OA，登录完后按 Enter 自动保存 Cookie。
 
-**方式二：自动识别验证码（准确率一般）**
+会弹出一个浏览器窗口，你手动输入账号密码登录 OA，登录后回到命令行按 Enter，Cookie 会自动保存到 `data/oa_cookies.json`。Cookie 有效期约 1-2 小时，过期后重新执行此步骤。
+
+### 第二步：启动轮询
+
+**前台运行（可以看到日志输出）：**
+双击 `start_polling.bat`
+
+**后台静默运行（无窗口，不干扰工作）：**
+双击 `start_polling_hidden.vbs`
+
+或者用命令行：
 
 ```powershell
-py src/auto_login.py
+# 一次性检查
+$env:PYTHONPATH="src"
+py src\run_contract_polling.py --once
+
+# 持续轮询
+$env:PYTHONPATH="src"
+py src\run_contract_polling.py
 ```
 
-## 手动运行
+### 如何停止
 
-一次轮询：
+- 前台窗口：直接关掉命令行窗口
+- 后台静默：打开任务管理器（Ctrl+Shift+Esc），结束 `python.exe` 进程
 
-```powershell
-$env:PYTHONPATH="D:\BaiduSyncdisk\claude\contract-sentinel\src"
-py src/run_contract_polling.py --once
-```
+### 注意事项
 
-持续轮询（前台运行）：
-
-```powershell
-$env:PYTHONPATH="D:\BaiduSyncdisk\claude\contract-sentinel\src"
-py src/run_contract_polling.py
-```
+- **Cookie 过期**：OA 登录态约 1-2 小时过期，过期后轮询会报 `OA login failed`，需要重新执行 `py src\manual_login.py`
+- **只读模式**：脚本只查看和下载，不会自动审批或提交意见
+- **首次运行**：如果当前 OA 待办中没有匹配关键词的流程，会输出 `processed=0`，这是正常结果
 
 ## 审核后端
 
-- `skill_request`：默认后端。生成 `audit/audit_request.md`，由 Codex 使用 `contract-approval-auditing` 规则复核。
-- `direct_llm`：预留后端。当前只写入未启用状态，不直接调用模型 API。
-- `claude_cli`：实验后端。通过 `claude -p` 拉起 Claude Code CLI，必须先做本机端到端兼容测试。
+系统预留了三种审核方式，可在 `config.json` 中切换 `audit_backend` 字段：
+
+| 后端 | 说明 | 状态 |
+|------|------|------|
+| `skill_request` | 默认。自动生成 `audit/audit_request.md`，再由人工或 AI 按规则审核 | ✅ 可用 |
+| `direct_llm` | 预留，后续可通过大模型 API 直接生成审核结论 | ⏳ 待实现 |
+| `claude_cli` | 实验性，通过 Claude Code CLI 执行审核 | 🧪 实验 |
 
 ## 测试
 
 ```powershell
 pytest tests -v
-$files = @('src\run_contract_polling.py') + (Get-ChildItem src\contract_sentinel -Filter *.py | ForEach-Object { $_.FullName })
-py -m py_compile @files
 ```
+
+36 个单元测试覆盖了路径处理、状态存储、OA 客户端、审核后端、轮询编排等核心逻辑，全部使用 Fake/Mock，不依赖真实 OA 或浏览器。
 
 ## 安全边界
 
-- 不自动点击 OA 的同意、驳回、提交。
-- 不绕过短信、扫码或强验证码。
-- 不提交 `config.json`、Cookie、Chrome Profile、日志、合同附件或审核产物。
-- 审核发现高风险时只写本地结论，不自动回填 OA。
-
+- **不自动提交 OA**：不点击同意、驳回、提交，不修改 OA 数据
+- **不绕过验证码**：验证码识别失败则停止，不尝试暴力破解
+- **不保存明文密码**：通过 Cookie 复用登录态
+- **敏感文件不提交**：`config.json`、Cookie、Chrome Profile、日志、合同附件和审核产物全部在 `.gitignore` 中排除
+- **异常即停**：登录失效、附件下载失败、页面结构变化均会停止并报错
+- **高风险仅写本地**：审核发现风险只写入本地文件，不回填 OA 系统
