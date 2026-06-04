@@ -166,7 +166,7 @@ def test_download_attachments_raises_when_regular_attachment_link_fails(tmp_path
         make_client().download_attachments(FakePage(), item, tmp_path)
 
 
-def test_download_button_failure_raises_runtime_error(tmp_path):
+def test_download_button_failure_returns_empty_attachments(tmp_path):
     class FakeDownloadContext:
         def __enter__(self):
             return self
@@ -204,5 +204,5 @@ def test_download_button_failure_raises_runtime_error(tmp_path):
 
     item = WorkflowItem(workflow_id="11-A-AA2026-1", title="合同评审", detail_url="/detail")
 
-    with pytest.raises(RuntimeError, match=r"Download button 0 failed: click failed"):
-        make_client().download_attachments(FakePage(), item, tmp_path)
+    attachments = make_client().download_attachments(FakePage(), item, tmp_path)
+    assert attachments == []

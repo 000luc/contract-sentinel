@@ -110,6 +110,77 @@ class OAClient:
         )
         return [WorkflowItem(**row) for row in rows]
 
+    def _get_main_iframe(self, page: Page):
+        """找到 SPA 详情页的主 iframe"""
+        frames = getattr(page, "frames", None)
+        if frames is None:
+            return None
+        for f in frames:
+            if "static4form" in f.url:
+                return f
+        return None
+
+    def _find_file_links_in_iframe(self, iframe) -> list[dict]:
+        """在 iframe 内查找文件链接列表"""
+        return iframe.evaluate("""() => {
+            const items = document.querySelectorAll('.wea-upload-list-item a');
+            return Array.from(items).map(a => ({
+                name: a.innerText.trim(),
+                visible: a.offsetParent !== null,
+            })).filter(f => f.name);
+        }""")
+
+    def _click_and_capture_download_urls(
+        self, page: Page, iframe, file_links: list[dict]
+    ) -> list[dict]:
+        """点击文件链接，拦截 window.open 获取下载 URL"""
+        results = []
+        for fl in file_links:
+            captured = iframe.evaluate("""() => {
+                window.__dlUrl = null;
+                const origOpen = window.open;
+                window.open = function(url) {
+                    window.__dlUrl = url || null;
+                    return null;  // 阻止弹窗
+                };
+            }""")
+
+            try:
+                link = iframe.locator('.wea-upload-list-item a').nth(
+                    file_links.index(fl)
+                )
+                link.click()
+                page.wait_for_timeout(2000)
+            except Exception as exc:
+                print(f"   点击文件链接失败: {fl['name']}: {exc}")
+                continue
+
+            dl_url = iframe.evaluate("() => window.__dlUrl")
+            if dl_url:
+                full_url = self._absolute_url(dl_url)
+                results.append({"name": fl["name"], "url": full_url})
+
+        return results
+
+    def _download_via_http(
+        self, page: Page, file_info: dict, output_dir: Path
+    ) -> Path | None:
+        """通过 HTTP 请求下载文件"""
+        try:
+            response = page.context.request.get(file_info["url"])
+            if not response.ok:
+                print(f"   HTTP {response.status}: {file_info['url']}")
+                return None
+            content = response.body()
+            if not content:
+                return None
+            target = self._unique_target_path(output_dir, file_info["name"])
+            target.write_bytes(content)
+            return target
+        except Exception as exc:
+            print(f"   下载失败: {exc}")
+            return None
+
     def download_attachments(
         self,
         page: Page,
@@ -123,11 +194,39 @@ class OAClient:
         page.goto(self._absolute_url(item.detail_url), wait_until="load", timeout=60000)
         page.wait_for_timeout(5000)
 
-        attachments = self._download_attachment_links(page, output_dir)
-        seen_downloads: set[Path] = {
-            attachment.local_path for attachment in attachments if attachment.local_path
-        }
+        attachments: list[AttachmentInfo] = []
+        seen_paths: set[Path] = set()
 
+        # 方式一：尝试从 SPA iframe 内点击文件链接捕获下载
+        iframe = self._get_main_iframe(page)
+        if iframe:
+            file_links = self._find_file_links_in_iframe(iframe)
+            if file_links:
+                download_infos = self._click_and_capture_download_urls(
+                    page, iframe, file_links
+                )
+                for info in download_infos:
+                    local_path = self._download_via_http(page, info, output_dir)
+                    if local_path and local_path not in seen_paths:
+                        seen_paths.add(local_path)
+                        attachments.append(
+                            AttachmentInfo(
+                                name=info["name"],
+                                href=info["url"],
+                                local_path=local_path,
+                            )
+                        )
+                if attachments:
+                    return self._dedupe_attachments(attachments)
+
+        # 方式二：尝试普通链接下载
+        attachments_from_links = self._download_attachment_links(page, output_dir)
+        for a in attachments_from_links:
+            if a.local_path and a.local_path not in seen_paths:
+                seen_paths.add(a.local_path)
+                attachments.append(a)
+
+        # 方式三：尝试点击下载图标
         download_buttons = page.locator(".icon-coms-download")
         for index in range(download_buttons.count()):
             try:
@@ -136,12 +235,12 @@ class OAClient:
                 download = download_info.value
                 target = self._unique_target_path(output_dir, download.suggested_filename)
                 download.save_as(target)
-            except Exception as exc:
-                raise RuntimeError(f"Download button {index} failed: {exc}") from exc
-
-            if target in seen_downloads:
+            except Exception:
                 continue
-            seen_downloads.add(target)
+
+            if target in seen_paths:
+                continue
+            seen_paths.add(target)
             attachments.append(
                 AttachmentInfo(
                     name=download.suggested_filename,
