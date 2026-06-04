@@ -1,4 +1,4 @@
-# Changelog
+﻿# Changelog
 
 ## 0.3.0 - 2026-06-04
 
@@ -7,7 +7,7 @@
 - 新增 `src/contract_sentinel/attachment_reader.py`：附件文本提取（TXT/PDF/DOCX/XLSX）
 - DeepSeek API Key 和 API Base 可配置
 - 测试覆盖从 36 个扩展到 51 个
-- 51 个测试全部通过
+- 51 个测试全部通过`n- 修复 start_polling.bat 文件编码问题（UTF-8 → GBK），避免运行时中文乱码
 
 ## 0.2.0 - 2026-06-04
 
