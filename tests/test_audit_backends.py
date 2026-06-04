@@ -96,17 +96,63 @@ def test_factory_rejects_unknown_backend():
         create_audit_backend("missing")
 
 
-def test_direct_llm_backend_writes_disabled_status(tmp_path):
+def test_direct_llm_backend_calls_api_and_writes_audit_md_and_json(tmp_path, monkeypatch):
+    material = make_material(tmp_path)
+    (material.raw_dir / "workflow.json").write_text(
+        '{"workflow_id":"WF-001","title":"设备采购合同"}', encoding="utf-8"
+    )
+    (material.raw_dir / "workflow.html").write_text(
+        "<html>合同金额：100万</html>", encoding="utf-8"
+    )
+    attachment = material.attachments_dir / "contract.txt"
+    attachment.write_text("预付款比例：30%", encoding="utf-8")
+
+    class FakeLLM:
+        def chat(self, messages, system=None):
+            return """## 审核发现问题清单
+1. 预付款比例过高（30%），建议不超过20%
+2. 无验收条款
+
+## 审批批注
+建议增加验收节点，降低预付款比例。"""
+
+    from src.contract_sentinel.audit_backends import DirectLlmBackend
+    backend = DirectLlmBackend(model="deepseek-v4-flash", api_key="sk-test", api_base="https://api.deepseek.com/v1")
+    backend.llm = FakeLLM()
+
+    status = backend.run(material)
+
+    assert (material.audit_dir / "audit.md").exists()
+    assert (material.audit_dir / "audit.json").exists()
+
+    audit_md = (material.audit_dir / "audit.md").read_text(encoding="utf-8")
+    assert "预付款比例过高" in audit_md
+    assert "审核发现问题清单" in audit_md
+    assert "审批批注" in audit_md
+
+    audit_json = json.loads((material.audit_dir / "audit.json").read_text(encoding="utf-8"))
+    assert audit_json["workflow_id"] == "WF-001"
+    assert audit_json["status"] == "audit_completed"
+    assert audit_json["backend"] == "direct_llm"
+
+    assert status["status"] == "audit_completed"
+
+
+def test_direct_llm_backend_handles_api_error(tmp_path, monkeypatch):
     material = make_material(tmp_path)
 
-    status = DirectLlmBackend("deepseek-chat").run(material)
+    class FailingLLM:
+        def chat(self, messages, system=None):
+            raise RuntimeError("API timeout")
 
-    saved_status = json.loads((material.audit_dir / "audit_status.json").read_text(encoding="utf-8"))
-    assert status == saved_status
-    assert saved_status["status"] == "audit_backend_not_enabled"
-    assert saved_status["backend"] == "direct_llm"
-    assert saved_status["model"] == "deepseek-chat"
-    assert "reason" in saved_status
+    from src.contract_sentinel.audit_backends import DirectLlmBackend
+    backend = DirectLlmBackend(model="deepseek-v4-flash", api_key="sk-test")
+    backend.llm = FailingLLM()
+
+    status = backend.run(material)
+
+    assert status["status"] == "audit_failed"
+    assert "API timeout" in status["error"]
 
 
 def test_audit_runner_delegates_to_backend(tmp_path):

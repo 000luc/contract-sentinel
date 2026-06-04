@@ -9,6 +9,15 @@ from typing import Any
 
 from .workflow_models import WorkflowMaterial
 
+SYSTEM_PROMPT = """你是一名专业的财务审计人员，负责审核公司合同审批流程。
+你的任务是仔细检查合同文件、流程信息和附件材料，找出任何金额、付款条款、主体信息、税率、违约责任、验收条款、文字错误和合规风险方面的问题。
+
+请务必：
+- 每个发现标注风险等级【高/中/低】
+- 批注意见简洁专业，适合直接用于OA审批
+- 不要推测没有证据的问题
+- 金额、日期、编号精确引用原文数据"""
+
 
 class AuditBackend(ABC):
     name: str
@@ -84,20 +93,141 @@ class SkillRequestBackend(AuditBackend):
 class DirectLlmBackend(AuditBackend):
     name = "direct_llm"
 
-    def __init__(self, model: str):
+    def __init__(self, model: str, api_key: str = "", api_base: str = "https://api.deepseek.com/v1"):
         self.model = model
+        self.api_key = api_key
+        self.api_base = api_base
+        self.llm: Any = None
+
+    def _get_llm(self):
+        if self.llm is None:
+            from .llm_client import LLMClient
+            self.llm = LLMClient(
+                api_key=self.api_key,
+                api_base=self.api_base,
+                model=self.model,
+            )
+        return self.llm
 
     def run(self, material: WorkflowMaterial) -> dict[str, Any]:
-        status = {
-            "workflow_id": material.item.workflow_id,
-            "status": "audit_backend_not_enabled",
-            "backend": self.name,
-            "created_at": _utc_now(),
-            "workflow_dir": str(material.workflow_dir),
-            "model": self.model,
-            "reason": "Direct LLM audit backend is not enabled yet.",
-        }
-        return _write_status(material, status)
+        material.audit_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            workflow_json = (material.raw_dir / "workflow.json").read_text(encoding="utf-8")
+            workflow_html = ""
+            html_path = material.raw_dir / "workflow.html"
+            if html_path.exists():
+                workflow_html = html_path.read_text(encoding="utf-8", errors="replace")
+
+            from .attachment_reader import AttachmentReader
+            reader = AttachmentReader()
+            attachments_text = reader.summarize(material.attachments_dir)
+
+            user_prompt = self._build_audit_prompt(
+                workflow_json=workflow_json,
+                workflow_html=workflow_html,
+                attachments_text=attachments_text,
+            )
+
+            llm = self._get_llm()
+            response = llm.chat(
+                messages=[{"role": "user", "content": user_prompt}],
+                system=SYSTEM_PROMPT,
+            )
+
+            audit_md_path = material.audit_dir / "audit.md"
+            audit_md_path.write_text(response, encoding="utf-8")
+
+            findings, comment = self._parse_response(response)
+            audit_json: dict[str, Any] = {
+                "workflow_id": material.item.workflow_id,
+                "title": material.item.title,
+                "status": "audit_completed",
+                "backend": self.name,
+                "model": self.model,
+                "created_at": _utc_now(),
+                "workflow_dir": str(material.workflow_dir),
+                "findings": findings,
+                "comment": comment,
+            }
+            (material.audit_dir / "audit.json").write_text(
+                json.dumps(audit_json, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+
+            status: dict[str, Any] = {
+                "workflow_id": material.item.workflow_id,
+                "status": "audit_completed",
+                "backend": self.name,
+                "model": self.model,
+                "created_at": _utc_now(),
+                "workflow_dir": str(material.workflow_dir),
+            }
+            return _write_status(material, status)
+
+        except Exception as exc:
+            status: dict[str, Any] = {
+                "workflow_id": material.item.workflow_id,
+                "status": "audit_failed",
+                "backend": self.name,
+                "model": self.model,
+                "created_at": _utc_now(),
+                "error": str(exc),
+            }
+            return _write_status(material, status)
+
+    def _build_audit_prompt(
+        self,
+        workflow_json: str,
+        workflow_html: str,
+        attachments_text: str,
+    ) -> str:
+        html_snippet = workflow_html[:3000] if workflow_html else "(无)"
+        return f"""请审核以下合同审批流程。
+
+## 流程信息（workflow.json）
+{workflow_json[:2000]}
+
+## 详情页面内容（workflow.html 摘要）
+{html_snippet}
+
+## 合同附件内容
+{attachments_text}
+
+## 审核要求
+请按以下维度逐一检查：
+1. 合同金额是否合理、大小写是否一致
+2. 付款条款是否合理（预付款比例、付款节点是否与交付匹配）
+3. 签订主体是否与流程信息一致
+4. 税率和发票条款是否明确
+5. 违约责任是否对等
+6. 履约期限和验收条款是否明确
+7. 文字错误或逻辑矛盾
+8. 其他合规风险
+
+请输出两个部分：
+## 审核发现问题清单
+（逐条列出发现的问题，按严重程度排序。每条标注【高/中/低】风险等级）
+
+## 审批批注
+（给出可直接用于OA审批的建议文字，控制在200字以内）"""
+
+    def _parse_response(self, response: str) -> tuple[list[dict], str]:
+        findings: list[dict] = []
+        comment = ""
+
+        parts = response.split("## ")
+        for part in parts:
+            if part.startswith("审核发现问题清单") or part.startswith("审核发现"):
+                lines = part.strip().split("\n")[1:]
+                for line in lines:
+                    line = line.strip()
+                    if line and (line.startswith("-") or line.startswith("*") or line[0].isdigit()):
+                        findings.append({"text": line.lstrip("-* 0123456789.")})
+            elif part.startswith("审批批注"):
+                comment = "\n".join(part.strip().split("\n")[1:]).strip()
+
+        return findings, comment
 
 
 class ClaudeCliBackend(AuditBackend):
@@ -142,11 +272,13 @@ def create_audit_backend(
     name: str,
     model: str = "deepseek-chat",
     claude_command: str = "claude",
+    api_key: str = "",
+    api_base: str = "https://api.deepseek.com/v1",
 ) -> AuditBackend:
     if name == "skill_request":
         return SkillRequestBackend()
     if name == "direct_llm":
-        return DirectLlmBackend(model)
+        return DirectLlmBackend(model=model, api_key=api_key, api_base=api_base)
     if name == "claude_cli":
         return ClaudeCliBackend(claude_command)
     raise ValueError(f"Unknown audit backend: {name}")
