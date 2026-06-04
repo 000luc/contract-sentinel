@@ -22,6 +22,8 @@ class Settings:
     audit_backend: str
     direct_llm_model: str
     claude_cli_command: str
+    deepseek_api_key: str
+    deepseek_api_base: str
 
 
 def _poll_interval_seconds(value: object) -> int:
@@ -53,4 +55,6 @@ def load_settings(config_path: Path = DEFAULT_CONFIG_PATH) -> Settings:
         audit_backend=data.get("audit_backend", "skill_request"),
         direct_llm_model=data.get("direct_llm_model", "deepseek-chat"),
         claude_cli_command=data.get("claude_cli_command", "claude"),
+        deepseek_api_key=data.get("deepseek_api_key", ""),
+        deepseek_api_base=data.get("deepseek_api_base", "https://api.deepseek.com/v1"),
     )

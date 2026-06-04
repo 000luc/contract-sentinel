@@ -4,6 +4,8 @@
   "poll_interval_seconds": 300,
   "contract_keywords": ["付款合同评审", "合同评审", "付款合同", "合同"],
   "audit_backend": "skill_request",
-  "direct_llm_model": "deepseek-chat",
-  "claude_cli_command": "claude"
+  "direct_llm_model": "deepseek-v4-flash",
+  "claude_cli_command": "claude",
+  "deepseek_api_key": "",
+  "deepseek_api_base": "https://api.deepseek.com/v1"
 }
