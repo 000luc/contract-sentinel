@@ -33,8 +33,13 @@ class OAClient:
         return json.loads(self.cookie_path.read_text(encoding="utf-8"))
 
     def is_contract_workflow(self, item: WorkflowItem) -> bool:
-        title = item.title.lower()
-        return any(keyword.lower() in title for keyword in self.contract_keywords)
+        """判断是否为合同审批流程（排除通知公告类页面）"""
+        title = item.title
+        # 排除 OA 通知公告（"关于...通知" 格式），非合同审批流程
+        if title.startswith("关于") and "通知" in title:
+            return False
+        title_lower = title.lower()
+        return any(keyword.lower() in title_lower for keyword in self.contract_keywords)
 
     def open_browser(self):
         from playwright.sync_api import sync_playwright
