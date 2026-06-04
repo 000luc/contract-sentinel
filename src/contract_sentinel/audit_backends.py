@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
+import re
 import subprocess
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from .workflow_models import WorkflowMaterial
 
@@ -185,11 +189,15 @@ class DirectLlmBackend(AuditBackend):
         html_snippet = workflow_html[:3000] if workflow_html else "(无)"
         return f"""请审核以下合同审批流程。
 
-## 流程信息（workflow.json）
-{workflow_json[:2000]}
+以下是我已读取的流程资料：
 
-## 详情页面内容（workflow.html 摘要）
+## 流程信息
+{workflow_json[:2000]}
+[注意：流程信息过长已截断，仅显示前2000字符]
+
+## 详情页面内容
 {html_snippet}
+[注意：页面内容过长已截断，仅显示前3000字符]
 
 ## 合同附件内容
 {attachments_text}
@@ -223,9 +231,18 @@ class DirectLlmBackend(AuditBackend):
                 for line in lines:
                     line = line.strip()
                     if line and (line.startswith("-") or line.startswith("*") or line[0].isdigit()):
-                        findings.append({"text": line.lstrip("-* 0123456789.")})
+                        risk = ""
+                        risk_match = re.search(r'【([^】]*[高|中|低][^】]*)】', line)
+                        if risk_match:
+                            risk = risk_match.group(1)
+                            line = line.replace(risk_match.group(0), "")
+                        text = re.sub(r"^[-*\d]+\.\s*", "", line).strip()
+                        findings.append({"text": text, "risk": risk or ""})
             elif part.startswith("审批批注"):
                 comment = "\n".join(part.strip().split("\n")[1:]).strip()
+
+        if not findings and not comment:
+            logger.warning("Could not parse audit sections from LLM response")
 
         return findings, comment
 

@@ -108,7 +108,13 @@ def test_direct_llm_backend_calls_api_and_writes_audit_md_and_json(tmp_path, mon
     attachment.write_text("预付款比例：30%", encoding="utf-8")
 
     class FakeLLM:
+        def __init__(self):
+            self.last_messages = None
+            self.last_system = None
+
         def chat(self, messages, system=None):
+            self.last_messages = messages
+            self.last_system = system
             return """## 审核发现问题清单
 1. 预付款比例过高（30%），建议不超过20%
 2. 无验收条款
@@ -116,14 +122,18 @@ def test_direct_llm_backend_calls_api_and_writes_audit_md_and_json(tmp_path, mon
 ## 审批批注
 建议增加验收节点，降低预付款比例。"""
 
-    from src.contract_sentinel.audit_backends import DirectLlmBackend
     backend = DirectLlmBackend(model="deepseek-v4-flash", api_key="sk-test", api_base="https://api.deepseek.com/v1")
-    backend.llm = FakeLLM()
+    fake_llm = FakeLLM()
+    backend.llm = fake_llm
 
     status = backend.run(material)
 
     assert (material.audit_dir / "audit.md").exists()
     assert (material.audit_dir / "audit.json").exists()
+
+    assert fake_llm.last_system is not None
+    assert "设备采购合同" in fake_llm.last_messages[0]["content"]
+    assert "预付款比例" in fake_llm.last_messages[0]["content"]
 
     audit_md = (material.audit_dir / "audit.md").read_text(encoding="utf-8")
     assert "预付款比例过高" in audit_md
@@ -134,6 +144,8 @@ def test_direct_llm_backend_calls_api_and_writes_audit_md_and_json(tmp_path, mon
     assert audit_json["workflow_id"] == "WF-001"
     assert audit_json["status"] == "audit_completed"
     assert audit_json["backend"] == "direct_llm"
+    assert len(audit_json["findings"]) > 0
+    assert audit_json["comment"] != ""
 
     assert status["status"] == "audit_completed"
 
@@ -145,7 +157,6 @@ def test_direct_llm_backend_handles_api_error(tmp_path, monkeypatch):
         def chat(self, messages, system=None):
             raise RuntimeError("API timeout")
 
-    from src.contract_sentinel.audit_backends import DirectLlmBackend
     backend = DirectLlmBackend(model="deepseek-v4-flash", api_key="sk-test")
     backend.llm = FailingLLM()
 
