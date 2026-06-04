@@ -38,3 +38,28 @@ def test_summarize_attachments(tmp_path):
     result = reader.summarize(d, max_files=5, max_chars_per_file=2000)
     assert "a.txt" in result
     assert "bbb" in result
+
+
+def test_summarize_missing_directory(tmp_path):
+    reader = AttachmentReader()
+    missing = tmp_path / "does_not_exist"
+    result = reader.summarize(missing)
+    assert result.startswith("(目录无法访问:")
+
+
+def test_summarize_max_files_message(tmp_path):
+    reader = AttachmentReader()
+    d = tmp_path
+    for i in range(5):
+        (d / f"file_{i}.txt").write_text(f"content_{i}", encoding="utf-8")
+
+    result = reader.summarize(d, max_files=3, max_chars_per_file=4000)
+    assert "共 5 个文件" in result
+    assert "已读取前 3 个" in result
+
+
+def test_summarize_empty_directory(tmp_path):
+    reader = AttachmentReader()
+    d = tmp_path
+    result = reader.summarize(d)
+    assert result == "(无附件内容)"

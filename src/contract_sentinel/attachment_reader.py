@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 TEXT_SUFFIXES = {".txt", ".md", ".csv", ".json", ".xml", ".html", ".htm"}
 DOCX_SUFFIXES = {".docx"}
 PDF_SUFFIXES = {".pdf"}
-XLSX_SUFFIXES = {".xlsx", ".xls"}
+XLSX_SUFFIXES = {".xlsx"}
 
 
 class AttachmentReader:
@@ -19,7 +19,8 @@ class AttachmentReader:
         if suffix in TEXT_SUFFIXES:
             try:
                 content = file_path.read_text(encoding="utf-8", errors="replace")
-            except Exception:
+            except Exception as exc:
+                logger.warning("Failed to read text file %s: %s", file_path.name, exc)
                 return ""
         elif suffix in PDF_SUFFIXES:
             content = AttachmentReader._read_pdf(file_path)
@@ -97,7 +98,12 @@ class AttachmentReader:
     def summarize(self, directory: Path, max_files: int = 5, max_chars_per_file: int = 4000) -> str:
         parts = []
         count = 0
-        for f in sorted(directory.iterdir()):
+        try:
+            entries = list(directory.iterdir())
+        except (FileNotFoundError, PermissionError, OSError) as exc:
+            return f"(目录无法访问: {exc})"
+
+        for f in sorted(entries):
             if not f.is_file():
                 continue
             content = self.read_text(f, max_chars=max_chars_per_file)
@@ -105,7 +111,7 @@ class AttachmentReader:
                 parts.append(f"=== {f.name} ===\n{content}")
                 count += 1
                 if count >= max_files:
-                    total = sum(1 for _ in directory.iterdir() if _.is_file())
+                    total = sum(1 for _ in entries if _.is_file())
                     parts.append(f"\n[共 {total} 个文件，已读取前 {max_files} 个]")
                     break
             else:
