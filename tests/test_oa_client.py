@@ -75,7 +75,7 @@ def test_download_attachments_downloads_regular_attachment_links(tmp_path):
         status = 200
 
         def body(self):
-            return b"file bytes"
+            return b"PK\x03\x04" + b"a" * 200
 
     class FakeRequest:
         def __init__(self):
@@ -103,7 +103,12 @@ def test_download_attachments_downloads_regular_attachment_links(tmp_path):
         def wait_for_timeout(self, timeout):
             self.timeout = timeout
 
+        def inner_text(self, selector):
+            return ""
+
         def evaluate(self, _script):
+            if "wea-upload-list-item" in _script:
+                return []
             return [
                 {
                     "text": "合同.docx",
@@ -123,11 +128,11 @@ def test_download_attachments_downloads_regular_attachment_links(tmp_path):
 
     assert len(attachments) == 1
     assert attachments[0].local_path == tmp_path / "合同.docx"
-    assert (tmp_path / "合同.docx").read_bytes() == b"file bytes"
+    assert (tmp_path / "合同.docx").read_bytes() == b"PK\x03\x04" + b"a" * 200
     assert page.context.request.urls == ["https://oa.example.com/files/a.docx"]
 
 
-def test_download_attachments_raises_when_regular_attachment_link_fails(tmp_path):
+def test_download_attachments_returns_empty_when_attachment_link_fails(tmp_path):
     class FakeResponse:
         ok = False
         status = 403
@@ -142,6 +147,10 @@ def test_download_attachments_raises_when_regular_attachment_link_fails(tmp_path
     class FakeContext:
         request = FakeRequest()
 
+    class FakeButtons:
+        def count(self):
+            return 0
+
     class FakePage:
         context = FakeContext()
 
@@ -151,7 +160,12 @@ def test_download_attachments_raises_when_regular_attachment_link_fails(tmp_path
         def wait_for_timeout(self, timeout):
             self.timeout = timeout
 
+        def inner_text(self, selector):
+            return ""
+
         def evaluate(self, _script):
+            if "wea-upload-list-item" in _script:
+                return []
             return [
                 {
                     "text": "合同.docx",
@@ -160,10 +174,14 @@ def test_download_attachments_raises_when_regular_attachment_link_fails(tmp_path
                 }
             ]
 
+        def locator(self, selector):
+            assert selector == ".icon-coms-download"
+            return FakeButtons()
+
     item = WorkflowItem(workflow_id="11-A-AA2026-1", title="合同评审", detail_url="/detail")
 
-    with pytest.raises(RuntimeError, match="Attachment link download failed: .*HTTP 403"):
-        make_client().download_attachments(FakePage(), item, tmp_path)
+    attachments = make_client().download_attachments(FakePage(), item, tmp_path)
+    assert attachments == []
 
 
 def test_download_button_failure_returns_empty_attachments(tmp_path):

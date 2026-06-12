@@ -16,10 +16,11 @@ def main() -> None:
 
     if args.once:
         with poller.client.open_browser() as playwright:
-            browser = playwright.chromium.launch(headless=False)
-            context = browser.new_context()
-            context.add_cookies(poller.client.load_cookies())
-            page = context.new_page()
+            result = poller._try_login_with_cookies(playwright)
+            if result is False or result is True:
+                print("登录失败，退出")
+                return
+            page, browser, context = result
             try:
                 count = poller.process_once_with_page(page)
                 print(f"processed={count}")

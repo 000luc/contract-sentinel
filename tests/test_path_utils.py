@@ -24,5 +24,9 @@ def test_safe_filename_appends_suffix_for_windows_reserved_names():
     assert safe_filename("com1.txt") == "com1_.txt"
 
 
+from datetime import datetime
+
+
 def test_build_workflow_dir_name_contains_id_and_title():
-    assert build_workflow_dir_name('11-B-SH2026-30360', '场地租赁合同评审') == '11-B-SH2026-30360_场地租赁合同评审'
+    today = datetime.now().strftime("%Y-%m-%d")
+    assert build_workflow_dir_name('11-B-SH2026-30360', '场地租赁合同评审') == f'{today}_11-B-SH2026-30360_场地租赁合同评审'

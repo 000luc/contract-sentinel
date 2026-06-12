@@ -11,6 +11,7 @@ OA 自动登录（含验证码识别）
 import json
 import os
 import sys
+import time
 from datetime import datetime
 from PIL import Image, ImageEnhance
 from playwright.sync_api import sync_playwright
@@ -255,6 +256,64 @@ def refresh_captcha(page):
     return False
 
 
+LOGIN_INDICATORS = ["门户", "流程", "待办", "流程中心", "个人门户", "前端用户中心"]
+
+
+def interactive_login():
+    """弹出浏览器，让用户手动登录，成功后保存 Cookie"""
+    print("=" * 50)
+    print("OA 交互式登录")
+    print("=" * 50)
+
+    config = load_config()
+    oa_url = config.get("oa_url", "https://oa.grgt.cn/")
+
+    with sync_playwright() as p:
+        print("\n[1/2] 启动浏览器（请手动登录 OA）...")
+        browser = p.chromium.launch(headless=False)
+        page = browser.new_page()
+
+        print("[2/2] 访问 OA 登录页...")
+        page.goto(oa_url, wait_until="networkidle", timeout=30000)
+
+        # 等待用户手动登录
+        max_wait = 300  # 5 分钟
+        check_interval = 3
+        waited = 0
+        print(f"\n请在浏览器窗口中手动登录，最多等待 {max_wait} 秒...")
+
+        while waited < max_wait:
+            time.sleep(check_interval)
+            waited += check_interval
+
+            try:
+                url = page.url
+                body = page.inner_text("body")
+                # 检测登录成功：URL 不再是登录页，或页面包含登录成功标志
+                if "login" not in url.lower() and "logintype" not in url.lower():
+                    print(f"\n检测到页面跳转（{url[:60]}...），正在保存 Cookie...")
+                    cookies = page.context.cookies()
+                    with open(COOKIE_PATH, 'w', encoding='utf-8') as f:
+                        json.dump(cookies, f, ensure_ascii=False, indent=2)
+                    print(f"Cookie 已保存: {COOKIE_PATH}")
+                    browser.close()
+                    return True
+                if any(indicator in body for indicator in LOGIN_INDICATORS):
+                    print("\n检测到登录成功关键词，正在保存 Cookie...")
+                    cookies = page.context.cookies()
+                    with open(COOKIE_PATH, 'w', encoding='utf-8') as f:
+                        json.dump(cookies, f, ensure_ascii=False, indent=2)
+                    print(f"Cookie 已保存: {COOKIE_PATH}")
+                    browser.close()
+                    return True
+            except Exception:
+                pass
+
+        print("\n登录等待超时，请重新运行")
+        browser.close()
+        return False
+
+
 def auto_login():
     """自动登录 OA（带重试）"""
     print("=" * 50)
@@ -321,7 +380,7 @@ def auto_login():
             browser.close()
             return True
         else:
-            print(f"登录失败，{max_attempts}次尝试均未成功")
+            print(f"自动登录失败，{max_attempts}次尝试均未成功")
             print("=" * 50)
 
             # 保存最后一张截图用于人工确认
@@ -336,7 +395,18 @@ def auto_login():
 
 
 if __name__ == "__main__":
-    success = auto_login()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--manual", action="store_true", help="弹窗手动登录")
+    args = parser.parse_args()
+
+    if args.manual:
+        success = interactive_login()
+    else:
+        success = auto_login()
+        if not success:
+            print("\n自动登录失败，切换到交互式登录...")
+            success = interactive_login()
 
     if success:
         print("\n可以进入下一步：测试待办列表读取")

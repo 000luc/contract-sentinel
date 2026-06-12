@@ -32,5 +32,9 @@ def safe_filename(value: str, max_length: int = 120) -> str:
     return _avoid_windows_reserved_name(cleaned)
 
 
+from datetime import datetime
+
+
 def build_workflow_dir_name(workflow_id: str, title: str) -> str:
-    return safe_filename(f"{workflow_id}_{title}", max_length=160)
+    today = datetime.now().strftime("%Y-%m-%d")
+    return safe_filename(f"{today}_{workflow_id}_{title}", max_length=160)
